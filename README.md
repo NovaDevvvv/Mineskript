@@ -14,8 +14,8 @@ It creates a script workspace inside `.minecraft/config/minecraft/scripts`, gene
 - Run Python files directly from Minecraft with `/ms run <file>`.
 - Put scripts in subfolders under `config/minecraft/scripts`.
 - Use filename autocorrect when script names are close but not exact.
-- Read chat, inventory, scoreboard, player state, world state, and nearby entities.
-- Perform client-side actions such as clicking, looking, jumping, sprinting, sneaking, hotbar selection, and sending chat.
+- Read chat, inventory, scoreboard, player state, world state, nearby entities, and nearby player details.
+- Perform client-side actions such as clicking, looking, jumping, movement key control, sprinting, sneaking, hotbar selection, and sending chat.
 - Register Python event hooks for chat, tick, and join-world events.
 - Mirror script output into chat with color-coded levels and also write it to rotating log files.
 
@@ -124,6 +124,8 @@ import minescript
 minescript.sendchat("Hello from Python")
 print(minescript.getplayerpos())
 print(minescript.getinventory())
+minescript.moveforward(True)
+minescript.moveforward(False)
 ```
 
 ## Logging and Output
@@ -209,6 +211,15 @@ Important:
 | `getplayerpos()` | Returns `x`, `y`, `z`, `yaw`, `pitch`, and block coordinates. |
 | `lookat(x, y, z)` | Rotates the player view toward a world position. |
 | `jump()` | Makes the player jump. |
+| `moveforward(state=True)` | Presses or releases the forward movement key. |
+| `moveback(state=True)` | Presses or releases the back movement key. |
+| `moveleft(state=True)` | Presses or releases the left strafe key. |
+| `moveright(state=True)` | Presses or releases the right strafe key. |
+| `stopmoving()` | Releases forward, back, left, and right movement keys. |
+| `forward(state=True)` | Alias for `moveforward`. |
+| `back(state=True)` | Alias for `moveback`. |
+| `left(state=True)` | Alias for `moveleft`. |
+| `right(state=True)` | Alias for `moveright`. |
 | `sneak(state=True)` | Toggles sneaking. |
 | `sprint(state=True)` | Toggles sprinting. |
 
@@ -246,6 +257,39 @@ Important:
 | `getdimension()` | Returns the current dimension id. |
 | `getbiome()` | Returns the biome id at the player position. |
 | `getnearbyentities(radius=16.0)` | Returns nearby entity data within a radius. |
+| `getnearbyplayers(radius=16.0)` | Returns nearby player data including held items, facing, position, velocity, and movement state. |
+
+### `getnearbyplayers(16.0)`
+
+```python
+[
+  {
+    "name": "NovaB",
+    "player_name": "NovaB",
+    "display_name": "NovaB",
+    "uuid": "00000000-0000-0000-0000-000000000000",
+    "entity_type": "minecraft:player",
+    "x": 118.2,
+    "y": 64.0,
+    "z": -28.7,
+    "yaw": 92.4,
+    "pitch": 4.0,
+    "body_yaw": 90.0,
+    "head_yaw": 92.4,
+    "facing": "east",
+    "distance": 5.7,
+    "main_hand": "minecraft:diamond_sword",
+    "off_hand": "minecraft:shield",
+    "sneaking": false,
+    "sprinting": true,
+    "flying": false,
+    "on_ground": true,
+    "health": 20.0,
+    "max_health": 20.0,
+    "velocity": {"x": 0.0, "y": 0.0, "z": 0.12},
+  }
+]
+```
 
 ### Event helpers
 

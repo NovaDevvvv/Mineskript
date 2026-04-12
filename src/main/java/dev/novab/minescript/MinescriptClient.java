@@ -30,9 +30,11 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.toast.SystemToast;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.HungerManager;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.RegistryKey;
@@ -71,6 +73,12 @@ public final class MinescriptClient implements ClientModInitializer {
 	private static final String SCRIPT_CHAT_PREFIX = "[ms:";
 	private static final Deque<String> RECENT_CHAT = new ArrayDeque<>();
 	private static final Deque<JsonObject> EVENT_QUEUE = new ArrayDeque<>();
+	private static volatile boolean syntheticForwardPressed;
+	private static volatile boolean syntheticBackPressed;
+	private static volatile boolean syntheticLeftPressed;
+	private static volatile boolean syntheticRightPressed;
+	private static volatile boolean syntheticSneakPressed;
+	private static volatile boolean syntheticSprintPressed;
 
 	private MinescriptConfig config;
 	private ScriptRunner scriptRunner;
@@ -157,6 +165,7 @@ public final class MinescriptClient implements ClientModInitializer {
 
 	private void registerEventCapture() {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			applySyntheticInputState(client);
 			if (client.player == null) {
 				return;
 			}
@@ -252,6 +261,20 @@ public final class MinescriptClient implements ClientModInitializer {
 			Text.literal(title),
 			Text.literal(description).formatted(error ? Formatting.RED : Formatting.GREEN)
 		)));
+	}
+
+	public static void clearSyntheticInputs() {
+		syntheticForwardPressed = false;
+		syntheticBackPressed = false;
+		syntheticLeftPressed = false;
+		syntheticRightPressed = false;
+		syntheticSneakPressed = false;
+		syntheticSprintPressed = false;
+
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client != null) {
+			client.execute(() -> applySyntheticInputState(client));
+		}
 	}
 
 	private static List<String> splitForChat(String message) {
@@ -403,10 +426,48 @@ public final class MinescriptClient implements ClientModInitializer {
 		}
 
 		@Override
+		public JsonElement setForwardPressed(boolean pressed) {
+			return runOnClientThread(() -> setMovementKey("forward", pressed));
+		}
+
+		@Override
+		public JsonElement setBackPressed(boolean pressed) {
+			return runOnClientThread(() -> setMovementKey("back", pressed));
+		}
+
+		@Override
+		public JsonElement setLeftPressed(boolean pressed) {
+			return runOnClientThread(() -> setMovementKey("left", pressed));
+		}
+
+		@Override
+		public JsonElement setRightPressed(boolean pressed) {
+			return runOnClientThread(() -> setMovementKey("right", pressed));
+		}
+
+		@Override
+		public JsonElement stopMoving() {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				requirePlayer(client);
+				syntheticForwardPressed = false;
+				syntheticBackPressed = false;
+				syntheticLeftPressed = false;
+				syntheticRightPressed = false;
+				applySyntheticInputState(client);
+
+				JsonObject result = new JsonObject();
+				result.addProperty("moving", false);
+				return result;
+			});
+		}
+
+		@Override
 		public JsonElement setSneaking(boolean sneaking) {
 			return runOnClientThread(() -> {
 				MinecraftClient client = MinecraftClient.getInstance();
 				ClientPlayerEntity player = requirePlayer(client);
+				syntheticSneakPressed = sneaking;
 				player.setSneaking(sneaking);
 				client.options.sneakKey.setPressed(sneaking);
 				JsonObject result = new JsonObject();
@@ -420,6 +481,7 @@ public final class MinescriptClient implements ClientModInitializer {
 			return runOnClientThread(() -> {
 				MinecraftClient client = MinecraftClient.getInstance();
 				ClientPlayerEntity player = requirePlayer(client);
+				syntheticSprintPressed = sprinting;
 				player.setSprinting(sprinting);
 				client.options.sprintKey.setPressed(sprinting);
 				JsonObject result = new JsonObject();
@@ -699,6 +761,24 @@ public final class MinescriptClient implements ClientModInitializer {
 		}
 
 		@Override
+		public JsonElement getNearbyPlayers(double radius) {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				ClientPlayerEntity player = requirePlayer(client);
+				Box searchBox = player.getBoundingBox().expand(radius);
+				JsonArray result = new JsonArray();
+				for (AbstractClientPlayerEntity nearbyPlayer : client.world.getPlayers()) {
+					if (nearbyPlayer == player || !nearbyPlayer.getBoundingBox().intersects(searchBox)) {
+						continue;
+					}
+
+					result.add(serializeNearbyPlayer(nearbyPlayer, player));
+				}
+				return result;
+			});
+		}
+
+		@Override
 		public JsonElement pollEvents(List<String> eventTypes, int limit) {
 			JsonArray result = new JsonArray();
 			Set<String> filters = Set.copyOf(eventTypes);
@@ -780,11 +860,97 @@ public final class MinescriptClient implements ClientModInitializer {
 		result.addProperty("uuid", entity.getUuidAsString());
 		result.addProperty("name", entity.getName().getString());
 		result.addProperty("type", Registries.ENTITY_TYPE.getId(entity.getType()).toString());
+		result.addProperty("entity_type", Registries.ENTITY_TYPE.getId(entity.getType()).toString());
 		result.addProperty("x", entity.getX());
 		result.addProperty("y", entity.getY());
 		result.addProperty("z", entity.getZ());
+		result.addProperty("yaw", entity.getYaw());
+		result.addProperty("pitch", entity.getPitch());
 		result.addProperty("distance", player.distanceTo(entity));
 		return result;
+	}
+
+	private JsonObject serializeNearbyPlayer(AbstractClientPlayerEntity nearbyPlayer, ClientPlayerEntity sourcePlayer) {
+		JsonObject result = serializeEntity(nearbyPlayer, sourcePlayer);
+		result.addProperty("player_name", nearbyPlayer.getGameProfile().getName());
+		result.addProperty("display_name", nearbyPlayer.getDisplayName().getString());
+		result.addProperty("main_hand", describeItemStack(nearbyPlayer.getMainHandStack()));
+		result.addProperty("off_hand", describeItemStack(nearbyPlayer.getOffHandStack()));
+		result.addProperty("facing", describeFacing(nearbyPlayer.getYaw()));
+		result.addProperty("body_yaw", nearbyPlayer.bodyYaw);
+		result.addProperty("head_yaw", nearbyPlayer.headYaw);
+		result.addProperty("on_ground", nearbyPlayer.isOnGround());
+		result.addProperty("sneaking", nearbyPlayer.isSneaking());
+		result.addProperty("sprinting", nearbyPlayer.isSprinting());
+		result.addProperty("flying", nearbyPlayer.getAbilities().flying);
+
+		if (nearbyPlayer instanceof LivingEntity livingEntity) {
+			result.addProperty("health", livingEntity.getHealth());
+			result.addProperty("max_health", livingEntity.getMaxHealth());
+		}
+
+		Vec3d velocity = nearbyPlayer.getVelocity();
+		JsonObject velocityJson = new JsonObject();
+		velocityJson.addProperty("x", velocity.x);
+		velocityJson.addProperty("y", velocity.y);
+		velocityJson.addProperty("z", velocity.z);
+		result.add("velocity", velocityJson);
+		return result;
+	}
+
+	private String describeItemStack(ItemStack stack) {
+		return stack.isEmpty()
+			? "minecraft:air"
+			: Registries.ITEM.getId(stack.getItem()).toString();
+	}
+
+	private String describeFacing(float yaw) {
+		int index = MathHelper.floor((yaw % 360.0F) / 45.0F + 0.5F) & 7;
+		return switch (index) {
+			case 0 -> "south";
+			case 1 -> "south_west";
+			case 2 -> "west";
+			case 3 -> "north_west";
+			case 4 -> "north";
+			case 5 -> "north_east";
+			case 6 -> "east";
+			case 7 -> "south_east";
+			default -> "unknown";
+		};
+	}
+
+	private JsonObject setMovementKey(String direction, boolean pressed) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		requirePlayer(client);
+
+		switch (direction) {
+			case "forward" -> syntheticForwardPressed = pressed;
+			case "back" -> syntheticBackPressed = pressed;
+			case "left" -> syntheticLeftPressed = pressed;
+			case "right" -> syntheticRightPressed = pressed;
+			default -> throw new IllegalArgumentException("Unknown movement direction: " + direction);
+		}
+
+		applySyntheticInputState(client);
+
+		JsonObject result = new JsonObject();
+		result.addProperty("direction", direction);
+		result.addProperty("pressed", pressed);
+		return result;
+	}
+
+	private static void applySyntheticInputState(MinecraftClient client) {
+		client.options.forwardKey.setPressed(syntheticForwardPressed);
+		client.options.backKey.setPressed(syntheticBackPressed);
+		client.options.leftKey.setPressed(syntheticLeftPressed);
+		client.options.rightKey.setPressed(syntheticRightPressed);
+		client.options.sneakKey.setPressed(syntheticSneakPressed);
+		client.options.sprintKey.setPressed(syntheticSprintPressed);
+
+		if (client.player != null) {
+			client.player.setSneaking(syntheticSneakPressed);
+			client.player.setSprinting(syntheticSprintPressed);
+		}
 	}
 
 	private record ScoreEntry(String name, int score) {

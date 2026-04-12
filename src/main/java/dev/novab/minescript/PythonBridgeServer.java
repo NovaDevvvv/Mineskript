@@ -36,6 +36,16 @@ public final class PythonBridgeServer {
 
 		JsonElement jump();
 
+		JsonElement setForwardPressed(boolean pressed);
+
+		JsonElement setBackPressed(boolean pressed);
+
+		JsonElement setLeftPressed(boolean pressed);
+
+		JsonElement setRightPressed(boolean pressed);
+
+		JsonElement stopMoving();
+
 		JsonElement setSneaking(boolean sneaking);
 
 		JsonElement setSprinting(boolean sprinting);
@@ -73,6 +83,8 @@ public final class PythonBridgeServer {
 		JsonElement getBiome();
 
 		JsonElement getNearbyEntities(double radius);
+
+		JsonElement getNearbyPlayers(double radius);
 
 		JsonElement pollEvents(List<String> eventTypes, int limit);
 	}
@@ -155,6 +167,11 @@ public final class PythonBridgeServer {
 				case "rightclick" -> api.rightClick();
 				case "leftclick" -> api.leftClick();
 				case "jump" -> api.jump();
+				case "moveforward", "forward" -> api.setForwardPressed(getBoolean(args, "state", true));
+				case "moveback", "back" -> api.setBackPressed(getBoolean(args, "state", true));
+				case "moveleft", "left" -> api.setLeftPressed(getBoolean(args, "state", true));
+				case "moveright", "right" -> api.setRightPressed(getBoolean(args, "state", true));
+				case "stopmoving" -> api.stopMoving();
 				case "sneak" -> api.setSneaking(getBoolean(args, "state", true));
 				case "sprint" -> api.setSprinting(getBoolean(args, "state", true));
 				case "getobjectatinventorryslot", "getobjectatinventoryslot" -> api.getObjectAtInventorySlot(getInt(args, "slot", -1));
@@ -178,6 +195,7 @@ public final class PythonBridgeServer {
 				case "getdimension" -> api.getDimension();
 				case "getbiome" -> api.getBiome();
 				case "getnearbyentities" -> api.getNearbyEntities(getDouble(args, "radius", 16.0));
+				case "getnearbyplayers" -> api.getNearbyPlayers(getDouble(args, "radius", 16.0));
 				case "pollevents" -> api.pollEvents(getStringList(args, "types"), getInt(args, "limit", 100));
 				default -> throw new IllegalArgumentException("Unknown method: " + methodName);
 			};

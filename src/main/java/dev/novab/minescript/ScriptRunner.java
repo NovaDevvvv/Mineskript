@@ -114,6 +114,8 @@ public final class ScriptRunner {
 			emit(resolvedName, "Python script execution was interrupted", "ERROR", new ChatLoggingState());
 			MinescriptClient.showScriptToast("Minescript", resolvedName + " interrupted", true);
 			throw new IllegalStateException("Python script execution was interrupted", exception);
+		} finally {
+			MinescriptClient.clearSyntheticInputs();
 		}
 	}
 
