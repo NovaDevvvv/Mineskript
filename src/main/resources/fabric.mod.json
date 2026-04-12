@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "minescript",
+	"version": "${version}",
+	"name": "Minescript",
+	"description": "Client-side Python bridge for scripted Minecraft actions.",
+	"authors": [
+		"GitHub Copilot"
+	],
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.novab.minescript.MinescriptClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.1",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
