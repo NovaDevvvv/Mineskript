@@ -50,6 +50,8 @@ public final class PythonBridgeServer {
 
 		JsonElement setSprinting(boolean sprinting);
 
+		JsonElement runJava(String source);
+
 		JsonElement getObjectAtInventorySlot(int slotIndex);
 
 		JsonElement getInventory();
@@ -71,6 +73,8 @@ public final class PythonBridgeServer {
 		JsonElement getTargetBlock();
 
 		JsonElement getTargetEntity();
+
+		JsonElement getEntityNbt(int entityId);
 
 		JsonElement getHealth();
 
@@ -156,47 +160,49 @@ public final class PythonBridgeServer {
 		private JsonElement dispatch(String methodName, JsonObject args) {
 			String normalized = methodName.toLowerCase(Locale.ROOT);
 			return switch (normalized) {
-				case "sendchat" -> api.sendChat(getString(args, "message", ""));
-				case "getchat" -> api.getChat(getInt(args, "limit", 20));
-				case "getplayerpos" -> api.getPlayerPos();
-				case "lookat" -> api.lookAt(
+				case "send_chat" -> api.sendChat(getString(args, "message", ""));
+				case "get_chat" -> api.getChat(getInt(args, "limit", 20));
+				case "get_player_position" -> api.getPlayerPos();
+				case "look_at" -> api.lookAt(
 					getDouble(args, "x", 0.0),
 					getDouble(args, "y", 0.0),
 					getDouble(args, "z", 0.0)
 				);
-				case "rightclick" -> api.rightClick();
-				case "leftclick" -> api.leftClick();
+				case "right_click" -> api.rightClick();
+				case "left_click" -> api.leftClick();
 				case "jump" -> api.jump();
-				case "moveforward", "forward" -> api.setForwardPressed(getBoolean(args, "state", true));
-				case "moveback", "back" -> api.setBackPressed(getBoolean(args, "state", true));
-				case "moveleft", "left" -> api.setLeftPressed(getBoolean(args, "state", true));
-				case "moveright", "right" -> api.setRightPressed(getBoolean(args, "state", true));
-				case "stopmoving" -> api.stopMoving();
-				case "sneak" -> api.setSneaking(getBoolean(args, "state", true));
-				case "sprint" -> api.setSprinting(getBoolean(args, "state", true));
-				case "getobjectatinventorryslot", "getobjectatinventoryslot" -> api.getObjectAtInventorySlot(getInt(args, "slot", -1));
-				case "getinventory" -> api.getInventory();
-				case "quickmoveslot" -> api.quickMoveSlot(getInt(args, "slot", -1));
-				case "dropslot" -> api.dropSlot(getInt(args, "slot", -1));
-				case "swapslots" -> api.swapSlots(getInt(args, "slot_a", -1), getInt(args, "slot_b", -1));
-				case "getselectedhotbarslot" -> api.getSelectedHotbarSlot();
-				case "selecthotbarslot" -> api.selectHotbarSlot(getInt(args, "slot", -1));
-				case "getleaderboard", "getleaaderboard" -> api.getLeaderboard();
-				case "clickslot" -> api.clickSlot(
+				case "move_forward" -> api.setForwardPressed(getBoolean(args, "state", true));
+				case "move_back" -> api.setBackPressed(getBoolean(args, "state", true));
+				case "move_left" -> api.setLeftPressed(getBoolean(args, "state", true));
+				case "move_right" -> api.setRightPressed(getBoolean(args, "state", true));
+				case "stop_moving" -> api.stopMoving();
+				case "set_sneaking" -> api.setSneaking(getBoolean(args, "state", true));
+				case "set_sprinting" -> api.setSprinting(getBoolean(args, "state", true));
+				case "run_java" -> api.runJava(getString(args, "source", ""));
+				case "get_inventory_slot" -> api.getObjectAtInventorySlot(getInt(args, "slot", -1));
+				case "get_inventory" -> api.getInventory();
+				case "quick_move_slot" -> api.quickMoveSlot(getInt(args, "slot", -1));
+				case "drop_slot" -> api.dropSlot(getInt(args, "slot", -1));
+				case "swap_slots" -> api.swapSlots(getInt(args, "slot_a", -1), getInt(args, "slot_b", -1));
+				case "get_selected_hotbar_slot" -> api.getSelectedHotbarSlot();
+				case "select_hotbar_slot" -> api.selectHotbarSlot(getInt(args, "slot", -1));
+				case "get_leaderboard" -> api.getLeaderboard();
+				case "click_slot" -> api.clickSlot(
 					getInt(args, "slot", -1),
 					getInt(args, "button", 0),
 					getString(args, "action_type", "PICKUP")
 				);
-				case "gettargetblock" -> api.getTargetBlock();
-				case "gettargetentity" -> api.getTargetEntity();
-				case "gethealth" -> api.getHealth();
-				case "gethunger" -> api.getHunger();
-				case "getarmor" -> api.getArmor();
-				case "getdimension" -> api.getDimension();
-				case "getbiome" -> api.getBiome();
-				case "getnearbyentities" -> api.getNearbyEntities(getDouble(args, "radius", 16.0));
-				case "getnearbyplayers" -> api.getNearbyPlayers(getDouble(args, "radius", 16.0));
-				case "pollevents" -> api.pollEvents(getStringList(args, "types"), getInt(args, "limit", 100));
+				case "get_target_block" -> api.getTargetBlock();
+				case "get_target_entity" -> api.getTargetEntity();
+				case "get_entity_nbt" -> api.getEntityNbt(getInt(args, "entity_id", -1));
+				case "get_health" -> api.getHealth();
+				case "get_hunger" -> api.getHunger();
+				case "get_armor" -> api.getArmor();
+				case "get_dimension" -> api.getDimension();
+				case "get_biome" -> api.getBiome();
+				case "get_nearby_entities" -> api.getNearbyEntities(getDouble(args, "radius", 16.0));
+				case "get_nearby_players" -> api.getNearbyPlayers(getDouble(args, "radius", 16.0));
+				case "poll_events" -> api.pollEvents(getStringList(args, "types"), getInt(args, "limit", 100));
 				default -> throw new IllegalArgumentException("Unknown method: " + methodName);
 			};
 		}

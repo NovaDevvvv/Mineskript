@@ -1,448 +1,212 @@
-# Minescript
-
-![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-3C8527?style=for-the-badge)
-![Fabric](https://img.shields.io/badge/Loader-Fabric-DBD0B4?style=for-the-badge)
-![Python](https://img.shields.io/badge/Python-System%20Install-3776AB?style=for-the-badge)
-![Side](https://img.shields.io/badge/Side-Client-1F6FEB?style=for-the-badge)
-
-A client-side Fabric mod that lets Python scripts control and inspect the Minecraft client through `import minescript`.
-
-It creates a script workspace inside `.minecraft/config/minecraft/scripts`, generates a Python helper module at `.minecraft/config/minecraft/python/minescript.py`, runs scripts from in-game commands, mirrors output into chat and log files, and exposes a growing set of client-side automation hooks.
-
-## Highlights
-
-- Run Python files directly from Minecraft with `/ms run <file>`.
-- Put scripts in subfolders under `config/minecraft/scripts`.
-- Use filename autocorrect when script names are close but not exact.
-- Read chat, inventory, scoreboard, player state, world state, nearby entities, and nearby player details.
-- Perform client-side actions such as clicking, looking, jumping, movement key control, sprinting, sneaking, hotbar selection, and sending chat.
-- Register Python event hooks for chat, tick, and join-world events.
-- Mirror script output into chat with color-coded levels and also write it to rotating log files.
-
-## Quick Start
-
-1. Start the client once with the mod installed.
-2. Open `.minecraft/config/minecraft/scripts`.
-3. Create a Python file or use the generated `example.py` and `test.py`.
-4. In-game, run:
-
-```text
-/ms run example.py
-```
-
-You can also run a script without the `.py` extension. If the file name is close enough, Minescript will autocorrect it.
-
-Examples:
-
-```text
-/ms run test
-/ms run exampel
-/ms run tools/invento
-```
-
-## Runtime Layout
-
-After first launch, the mod creates:
-
-```text
-.minecraft/
-  config/
-    minescript.json
-    minecraft/
-      logs/
-        minescript.log
-        minescript.log.1
-        minescript.log.2
-      python/
-        minescript.py
-      scripts/
-        example.py
-        test.py
-        your_scripts_here.py
-        subfolders_supported/
-```
-
-## Commands
-
-### Run one script
-
-```text
-/minescript run your_script.py
-/ms run your_script.py
-```
-
-Behavior:
-
-- Runs a single script through your configured Python executable.
-- Supports subfolder paths.
-- Supports fuzzy filename autocorrect.
-- Shows start, finish, and failure toasts.
-
-### Show scripts folder
-
-```text
-/minescript folder
-/ms folder
-```
-
-### Reload support files and run all scripts
-
-```text
-/minescript reload
-/ms reload
-```
-
-Behavior:
-
-- Regenerates `minescript.py`, `example.py`, and `test.py`.
-- Recursively finds every `.py` file under `config/minecraft/scripts`.
-- Runs them in filename order.
-
-## Python Setup
-
-Minescript launches your system Python.
-
-Defaults:
-
-- Windows: `py`
-- Non-Windows: `python3`
-
-You can change this in `config/minescript.json`:
-
-```json
-{
-  "python_command": "py",
-  "port": 47641
-}
-```
-
-## Minimal Example
+# Minescript API
 
 ```python
-import minescript
-
-minescript.sendchat("Hello from Python")
-print(minescript.getplayerpos())
-print(minescript.getinventory())
-minescript.moveforward(True)
-minescript.moveforward(False)
+from minescript import game, data
 ```
 
-## Logging and Output
+`data.Position`, `data.Block`, `data.Entity`, `data.Player`, `data.InventorySlot`, `data.Health`, `data.Hunger`, `data.Armor`, `data.Leaderboard`, and `data.LeaderboardEntry` are the objects returned by `game` query functions. Their properties are available directly, for example `game.getplayerposition().x` and `game.gettargetblock().block_id`.
 
-By default:
+## Chat
 
-- `print(...)` output is shown in Minecraft chat.
-- Script messages are written to `config/minecraft/logs/minescript.log`.
-- Log lines are timestamped.
-- Chat messages use color-coded levels.
-
-### Chat log control
-
+### `game.sendchat(message)`
+Sends chat text or a command.
 ```python
-minescript.disablelog()
-minescript.enablelog()
+game.sendchat(input("message > "))
 ```
 
-`disablelog()` stops future script output from being mirrored into chat, but logging still continues to the log file.
-
-### Explicit levels
-
+### `game.getchat(limit=20)`
+Returns recent captured chat messages.
 ```python
-minescript.log("This is an info line")
-minescript.error("This is an error line")
+messages = game.getchat(10)
 ```
 
-### Log rotation
-
-Minescript rotates log files automatically when the main log grows too large.
-
-## Event Hooks
-
-The generated `minescript.py` includes simple Python decorators for client events.
-
+### `game.loginfo(message)`
+Writes an info log line.
 ```python
-import minescript
+game.loginfo("Script started")
+```
 
-@minescript.on_chat
-def handle_chat(event):
+### `game.logerror(message)`
+Writes an error log line.
+```python
+game.logerror("Something failed")
+```
+
+### `game.disablechatoutput()` / `game.enablechatoutput()`
+Controls whether script output is mirrored to chat.
+```python
+game.disablechatoutput()
+game.enablechatoutput()
+```
+
+## Player And Input
+
+### `game.getplayerposition()`
+Returns a `data.Position`.
+```python
+position = game.getplayerposition()
+print(position.x, position.y, position.z)
+```
+
+### `game.lookat(x, y, z)`
+Turns toward a world position.
+```python
+game.lookat(0, 64, 0)
+```
+
+### `game.jump()`
+Makes the player jump.
+```python
+game.jump()
+```
+
+### `game.moveforward(pressed=True)`, `game.moveback(pressed=True)`, `game.moveleft(pressed=True)`, `game.moveright(pressed=True)`
+Presses or releases a movement key.
+```python
+game.moveforward()
+game.moveforward(False)
+```
+
+### `game.stopmoving()`
+Releases scripted movement keys.
+```python
+game.stopmoving()
+```
+
+### `game.setsneaking(enabled=True)` / `game.setsprinting(enabled=True)`
+Changes sneaking or sprinting state.
+```python
+game.setsneaking(True)
+game.setsprinting(False)
+```
+
+### `game.gethealth()`, `game.gethunger()`, `game.getarmor()`
+Return `data.Health`, `data.Hunger`, and `data.Armor`.
+```python
+print(game.gethealth().health)
+print(game.gethunger().food)
+print(game.getarmor().armor)
+```
+
+### `game.getdimension()` / `game.getbiome()`
+Return the current dimension or biome id.
+```python
+print(game.getdimension(), game.getbiome())
+```
+
+## World Data
+
+### `game.gettargetblock()`
+Returns a `data.Block`, or `None`.
+```python
+block = game.gettargetblock()
+if block:
+    print(block.block_id, block.x, block.y, block.z)
+```
+
+### `game.gettargetentity()`
+Returns a `data.Entity` or `data.Player`, or `None`.
+```python
+entity = game.gettargetentity()
+if entity:
+    print(entity.name, entity.entity_type)
+```
+
+### `game.getnbt(entity)`
+Returns the SNBT string for a `data.Entity` or `data.Player`.
+```python
+entity = game.gettargetentity()
+if entity:
+    print(game.getnbt(entity))
+```
+
+### `game.getnearbyentities(radius=16.0)`
+Returns `data.Entity` and `data.Player` objects.
+```python
+for entity in game.getnearbyentities(8):
+    print(entity.name)
+```
+
+### `game.getnearbyplayers(radius=16.0)`
+Returns nearby `data.Player` objects.
+```python
+for player in game.getnearbyplayers():
+    print(player.player_name, player.facing)
+```
+
+## Inventory
+
+### `game.getinventoryslot(slot_index)`
+Returns one `data.InventorySlot`.
+```python
+slot = game.getinventoryslot(0)
+print(slot.item_id, slot.count)
+```
+
+### `game.getinventory()`
+Returns visible `data.InventorySlot` objects.
+```python
+for slot in game.getinventory():
+    print(slot.slot, slot.name)
+```
+
+### `game.quickmoveslot(slot_index)`, `game.dropslot(slot_index)`, `game.swapslots(first_slot, second_slot)`
+Moves, drops, or swaps inventory items.
+```python
+game.quickmoveslot(0)
+game.swapslots(0, 1)
+```
+
+### `game.getselectedhotbarslot()` / `game.selecthotbarslot(slot_index)`
+Gets or selects a hotbar index.
+```python
+game.selecthotbarslot(4)
+print(game.getselectedhotbarslot())
+```
+
+### `game.clickslot(slot_index, button=0, action_type="PICKUP")`
+Performs a Minecraft slot action.
+```python
+game.clickslot(0, action_type="QUICK_MOVE")
+```
+
+## Scoreboard And Java
+
+### `game.getleaderboard()`
+Returns a `data.Leaderboard`.
+```python
+board = game.getleaderboard()
+for entry in board.entries:
+    print(entry.name, entry.score)
+```
+
+### `game.runjava(source)`
+Runs a Java method body on the client thread. `client`, `player`, and Gson JSON classes are available.
+```python
+health = game.runjava("return new JsonPrimitive(player.getHealth());")
+```
+
+## Events
+
+### `game.onchat(handler)`, `game.ontick(handler)`, `game.onjoinworld(handler)`
+Register a chat, tick, or join-world handler.
+```python
+@game.onchat
+def on_chat(event):
     print(event["message"])
-
-@minescript.on_tick
-def handle_tick(event):
-    pass
-
-@minescript.on_join_world
-def handle_join(event):
-    minescript.sendchat("joined world")
-
-minescript.wait_forever()
 ```
 
-Available event types:
-
-- `chat`
-- `tick`
-- `join_world`
-
-Important:
-
-- Event hooks only run while the script is still alive.
-- Use `minescript.wait_forever()` or your own loop if the script should keep listening.
-- Internal `[ms:...]` messages are filtered out so the mod does not recursively trigger its own chat hooks.
-
-## API Reference
-
-### Chat and messaging
-
-| Function | Description |
-| --- | --- |
-| `sendchat(message)` | Sends a chat message. If the message starts with `/`, it is sent as a command. |
-| `getchat(limit=20)` | Returns recent chat lines captured by the mod. |
-| `log(message)` | Emits an info-level Minescript log line. |
-| `error(message)` | Emits an error-level Minescript log line. |
-| `disablelog()` | Stops chat mirroring for later script output. |
-| `enablelog()` | Re-enables chat mirroring. |
-
-### Player state and movement
-
-| Function | Description |
-| --- | --- |
-| `getplayerpos()` | Returns `x`, `y`, `z`, `yaw`, `pitch`, and block coordinates. |
-| `lookat(x, y, z)` | Rotates the player view toward a world position. |
-| `jump()` | Makes the player jump. |
-| `moveforward(state=True)` | Presses or releases the forward movement key. |
-| `moveback(state=True)` | Presses or releases the back movement key. |
-| `moveleft(state=True)` | Presses or releases the left strafe key. |
-| `moveright(state=True)` | Presses or releases the right strafe key. |
-| `stopmoving()` | Releases forward, back, left, and right movement keys. |
-| `forward(state=True)` | Alias for `moveforward`. |
-| `back(state=True)` | Alias for `moveback`. |
-| `left(state=True)` | Alias for `moveleft`. |
-| `right(state=True)` | Alias for `moveright`. |
-| `sneak(state=True)` | Toggles sneaking. |
-| `sprint(state=True)` | Toggles sprinting. |
-
-### Click and interaction helpers
-
-| Function | Description |
-| --- | --- |
-| `rightclick()` | Attempts a normal right-click interaction. |
-| `leftclick()` | Attempts a normal left-click attack or block hit. |
-| `clickslot(slot, button=0, action_type="PICKUP")` | Clicks a slot in the current screen handler. |
-| `quickmoveslot(slot)` | Shift-click style slot move. |
-| `dropslot(slot)` | Throws the item from a slot. |
-| `swapslots(slot_a, slot_b)` | Performs a simple three-click swap between two slots. |
-
-### Inventory and hotbar
-
-| Function | Description |
-| --- | --- |
-| `getobjectatinventorryslot(slot)` | Returns the item data for one slot. |
-| `getinventory()` | Returns every visible slot in the current screen handler. |
-| `getselectedhotbarslot()` | Returns the selected hotbar slot index. |
-| `selecthotbarslot(slot)` | Sets the selected hotbar slot. |
-
-### Scoreboard and world info
-
-| Function | Description |
-| --- | --- |
-| `getleaderboard()` | Returns the sidebar scoreboard title and entries. |
-| `getleaaderboard()` | Alias for the misspelled name you originally requested. |
-| `gettargetblock()` | Returns block information under the crosshair, or `None`. |
-| `gettargetentity()` | Returns entity information under the crosshair, or `None`. |
-| `gethealth()` | Returns current and max health. |
-| `gethunger()` | Returns food and saturation. |
-| `getarmor()` | Returns armor points. |
-| `getdimension()` | Returns the current dimension id. |
-| `getbiome()` | Returns the biome id at the player position. |
-| `getnearbyentities(radius=16.0)` | Returns nearby entity data within a radius. |
-| `getnearbyplayers(radius=16.0)` | Returns nearby player data including held items, facing, position, velocity, and movement state. |
-
-### `getnearbyplayers(16.0)`
-
+### `game.stopevents()` / `game.waitforever(interval=0.1)`
+Stops event polling or keeps the script alive for handlers.
 ```python
-[
-  {
-    "name": "NovaB",
-    "player_name": "NovaB",
-    "display_name": "NovaB",
-    "uuid": "00000000-0000-0000-0000-000000000000",
-    "entity_type": "minecraft:player",
-    "x": 118.2,
-    "y": 64.0,
-    "z": -28.7,
-    "yaw": 92.4,
-    "pitch": 4.0,
-    "body_yaw": 90.0,
-    "head_yaw": 92.4,
-    "facing": "east",
-    "distance": 5.7,
-    "main_hand": "minecraft:diamond_sword",
-    "off_hand": "minecraft:shield",
-    "sneaking": false,
-    "sprinting": true,
-    "flying": false,
-    "on_ground": true,
-    "health": 20.0,
-    "max_health": 20.0,
-    "velocity": {"x": 0.0, "y": 0.0, "z": 0.12},
-  }
-]
+game.waitforever()
 ```
 
-### Event helpers
+## Interaction
 
-| Function | Description |
-| --- | --- |
-| `on_chat(handler)` | Registers a chat event handler. |
-| `on_tick(handler)` | Registers a tick event handler. |
-| `on_join_world(handler)` | Registers a world-join event handler. |
-| `wait_forever(interval=0.1)` | Keeps the script alive for hooks. |
-| `stop_events()` | Stops the event polling loop. |
-
-## Return Shapes
-
-The API returns plain Python dictionaries and lists converted from JSON. Common examples:
-
-### `getplayerpos()`
-
+### `game.rightclick()` / `game.leftclick()`
+Uses or attacks at the crosshair.
 ```python
-{
-    "x": 120.5,
-    "y": 64.0,
-    "z": -31.5,
-    "yaw": 180.0,
-    "pitch": 12.0,
-    "block_x": 120,
-    "block_y": 64,
-    "block_z": -31,
-}
+game.rightclick()
+game.leftclick()
 ```
-
-### `getobjectatinventorryslot(0)`
-
-```python
-{
-    "slot": 0,
-    "empty": False,
-    "count": 64,
-    "name": "Stone",
-    "item_id": "minecraft:stone",
-    "sync_id": 0,
-    "slot_count": 46,
-}
-```
-
-### `getleaderboard()`
-
-```python
-{
-    "title": "Bedwars",
-    "entries": [
-        {"name": "PlayerA", "score": 10},
-        {"name": "PlayerB", "score": 8},
-    ],
-}
-```
-
-## File Autocorrect
-
-Minescript now autocorrects script file names when you run them from command.
-
-Supported corrections include:
-
-- missing `.py` extension
-- case differences
-- minor misspellings
-- close filename matches in subfolders
-
-Examples:
-
-```text
-/ms run test
-/ms run tset.py
-/ms run util/inventroy
-```
-
-If Minescript finds a strong enough match, it runs that script and tells you what it corrected.
-
-## Generated Example Scripts
-
-### `example.py`
-
-A small example that reads state and shows the basic module style.
-
-### `test.py`
-
-A broader smoke-test script that walks through many available actions with a delay between steps.
-
-Important:
-
-- some actions mutate inventory state
-- some actions can move the player or click the world
-- use it in a safe environment before relying on it on a real server
-
-## Safety Notes
-
-- This is a client-side tool, not a server plugin.
-- Methods only work while the relevant Minecraft client state exists.
-- Inventory and click helpers operate on the current open screen handler.
-- `gettargetblock()` and `gettargetentity()` depend on the current crosshair target.
-- Automation behavior may still be restricted by the server you are connected to.
-
-## Troubleshooting
-
-### Python script exits immediately
-
-Possible causes:
-
-- Python is not installed or not available through the configured command.
-- You ran the script directly outside Minecraft, so the local bridge server was not available.
-
-Check:
-
-- `config/minescript.json`
-- `config/minecraft/logs/minescript.log`
-
-### `import minescript` fails
-
-Start Minecraft with the mod once so it generates the helper module into `config/minecraft/python/minescript.py`.
-
-### Script not found
-
-Try:
-
-- `/ms folder`
-- using the relative path from the scripts folder
-- relying on autocorrect with the closest reasonable name
-
-### Chat spam or loops
-
-Minescript filters its own internal `[ms:...]` output from event capture, but your script can still generate noisy loops if it reacts to every chat message and then emits more chat. Use guards in handlers and prefer one-shot output for testing.
-
-## Build and Development
-
-Project target:
-
-- Minecraft `1.21.1`
-- Fabric Loader `0.19.1`
-- Fabric API `0.116.10+1.21.1`
-
-Build:
-
-```text
-./gradlew build
-```
-
-Run the client:
-
-```text
-./gradlew runclient
-```
-
-## Notes
-
-- This project uses Minecraft `1.21.1` because Fabric does not publish a `1.21.11` target.
-- The Python bridge runs locally over `127.0.0.1`.
-- The helper module is generated at runtime, so edits to the Java generator become visible after support files are regenerated.

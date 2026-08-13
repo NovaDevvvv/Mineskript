@@ -37,6 +37,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.HungerManager;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.entry.RegistryEntry;
@@ -135,15 +136,8 @@ public final class MinescriptClient implements ClientModInitializer {
 			.then(literal("reload")
 				.executes(context -> {
 					this.config.ensureSupportFiles();
-					context.getSource().sendFeedback(Text.literal("Running all Python files in " + this.config.scriptsDir().getFileName() + "...").formatted(Formatting.GRAY));
-
-					this.scriptRunner.runAllScripts().whenComplete((count, throwable) -> {
-						if (throwable != null) {
-							LOGGER.error("Failed to reload Minescript Python files", throwable);
-						} else {
-							LOGGER.info("Reloaded {} Python script(s)", count);
-						}
-					});
+					context.getSource().sendFeedback(Text.literal("Minescript support files reloaded.").formatted(Formatting.GRAY));
+					LOGGER.info("Reloaded Minescript support files");
 
 					return 1;
 				})
@@ -491,6 +485,15 @@ public final class MinescriptClient implements ClientModInitializer {
 		}
 
 		@Override
+		public JsonElement runJava(String source) {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				ClientPlayerEntity player = requirePlayer(client);
+				return new JavaSnippetRunner().run(source, client, player);
+			});
+		}
+
+		@Override
 		public JsonElement getObjectAtInventorySlot(int slotIndex) {
 			return runOnClientThread(() -> {
 				MinecraftClient client = MinecraftClient.getInstance();
@@ -686,6 +689,24 @@ public final class MinescriptClient implements ClientModInitializer {
 				}
 
 				return serializeEntity(entityHitResult.getEntity(), player);
+			});
+		}
+
+		@Override
+		public JsonElement getEntityNbt(int entityId) {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				requirePlayer(client);
+				Entity entity = client.world.getEntityById(entityId);
+				if (entity == null) {
+					throw new IllegalArgumentException("Entity is not available: " + entityId);
+				}
+
+				NbtCompound nbt = entity.writeNbt(new NbtCompound());
+				JsonObject result = new JsonObject();
+				result.addProperty("entity_id", entityId);
+				result.addProperty("snbt", nbt.asString());
+				return result;
 			});
 		}
 
@@ -940,16 +961,17 @@ public final class MinescriptClient implements ClientModInitializer {
 	}
 
 	private static void applySyntheticInputState(MinecraftClient client) {
-		client.options.forwardKey.setPressed(syntheticForwardPressed);
-		client.options.backKey.setPressed(syntheticBackPressed);
-		client.options.leftKey.setPressed(syntheticLeftPressed);
-		client.options.rightKey.setPressed(syntheticRightPressed);
-		client.options.sneakKey.setPressed(syntheticSneakPressed);
-		client.options.sprintKey.setPressed(syntheticSprintPressed);
+		boolean canApplyInput = client.currentScreen == null;
+		client.options.forwardKey.setPressed(canApplyInput && syntheticForwardPressed);
+		client.options.backKey.setPressed(canApplyInput && syntheticBackPressed);
+		client.options.leftKey.setPressed(canApplyInput && syntheticLeftPressed);
+		client.options.rightKey.setPressed(canApplyInput && syntheticRightPressed);
+		client.options.sneakKey.setPressed(canApplyInput && syntheticSneakPressed);
+		client.options.sprintKey.setPressed(canApplyInput && syntheticSprintPressed);
 
 		if (client.player != null) {
-			client.player.setSneaking(syntheticSneakPressed);
-			client.player.setSprinting(syntheticSprintPressed);
+			client.player.setSneaking(canApplyInput && syntheticSneakPressed);
+			client.player.setSprinting(canApplyInput && syntheticSprintPressed);
 		}
 	}
 

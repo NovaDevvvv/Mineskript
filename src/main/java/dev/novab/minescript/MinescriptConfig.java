@@ -112,7 +112,7 @@ public record MinescriptConfig(
 		return String.join("\n", lines) + "\n";
 	}
 
-	private String pythonModuleSource() {
+	private String legacyPythonModuleSource() {
 		return lines(
 			"\"\"\"Python helper module for talking to the local Minescript Fabric bridge.\"\"\"",
 			"",
@@ -178,6 +178,11 @@ public record MinescriptConfig(
 			"def getplayerpos():",
 			"\t\"\"\"Return the local player's position, rotation, and block coordinates.\"\"\"",
 			"\treturn _invoke(\"getplayerpos\")",
+			"",
+			"",
+			"def runjava(source):",
+			"\t\"\"\"Run a Java method body on the client thread and return a JSON value.\"\"\"",
+			"\treturn _invoke(\"runjava\", source=str(source))",
 			"",
 			"",
 			"def lookat(x, y, z):",
@@ -293,11 +298,6 @@ public record MinescriptConfig(
 			"def getleaderboard():",
 			"\t\"\"\"Return the sidebar scoreboard title and entries.\"\"\"",
 			"\treturn _invoke(\"getleaderboard\")",
-			"",
-			"",
-			"def getleaaderboard():",
-			"\t\"\"\"Compatibility alias for the original misspelled leaderboard helper.\"\"\"",
-			"\treturn getleaderboard()",
 			"",
 			"",
 			"def clickslot(slot, button=0, action_type=\"PICKUP\"):",
@@ -441,26 +441,205 @@ public record MinescriptConfig(
 		);
 	}
 
+	private String pythonModuleSource() {
+		return """
+			import atexit
+			import json
+			import os
+			import threading
+			import time
+			import urllib.error
+			import urllib.request
+
+			_PORT = int(os.environ.get("MINESCRIPT_PORT", "__MINESCRIPT_PORT__"))
+			_BASE_URL = f"http://127.0.0.1:{_PORT}/invoke"
+			_CONTROL_PREFIX = os.environ.get("MINESCRIPT_CONTROL_PREFIX", "__MINESCRIPT_CONTROL__:")
+			_EVENT_HANDLERS = {"chat": [], "tick": [], "join_world": []}
+			_STOP_EVENTS = threading.Event()
+
+			class Data:
+			    def __init__(self, **values): self.__dict__.update(values)
+			    def __repr__(self): return f"{type(self).__name__}({self.__dict__!r})"
+
+			class Position(Data): pass
+			class Block(Data): pass
+			class Entity(Data): pass
+			class Player(Entity): pass
+			class InventorySlot(Data): pass
+			class Health(Data): pass
+			class Hunger(Data): pass
+			class Armor(Data): pass
+			class LeaderboardEntry(Data): pass
+			class Leaderboard(Data): pass
+
+			def _invoke(method, **args):
+			    request = urllib.request.Request(_BASE_URL, data=json.dumps({"method": method, "args": args}).encode(), headers={"Content-Type": "application/json"}, method="POST")
+			    try:
+			        with urllib.request.urlopen(request, timeout=5) as response: payload = json.loads(response.read().decode())
+			    except urllib.error.URLError as exc:
+			        raise RuntimeError(f"Minescript bridge is unavailable: {exc}") from exc
+			    if not payload.get("ok"): raise RuntimeError(payload.get("error", "Unknown Minescript error"))
+			    return payload.get("result")
+
+			def _object(type_, value): return None if value is None else type_(**value)
+			def _entity(value): return _object(Player if value and value.get("entity_type") == "minecraft:player" else Entity, value)
+			def _emit_control(payload): print(f"{_CONTROL_PREFIX}{json.dumps(payload, separators=(\",\", \":\"))}", flush=True)
+
+			def send_chat(message): return _invoke("send_chat", message=str(message))
+			def get_chat(limit=20): return _invoke("get_chat", limit=int(limit))
+			def get_player_position(): return _object(Position, _invoke("get_player_position"))
+			def run_java(source): return _invoke("run_java", source=str(source))
+			def look_at(x, y, z): return _invoke("look_at", x=float(x), y=float(y), z=float(z))
+			def right_click(): return _invoke("right_click")
+			def left_click(): return _invoke("left_click")
+			def jump(): return _invoke("jump")
+			def move_forward(pressed=True): return _invoke("move_forward", state=bool(pressed))
+			def move_back(pressed=True): return _invoke("move_back", state=bool(pressed))
+			def move_left(pressed=True): return _invoke("move_left", state=bool(pressed))
+			def move_right(pressed=True): return _invoke("move_right", state=bool(pressed))
+			def stop_moving(): return _invoke("stop_moving")
+			def set_sneaking(enabled=True): return _invoke("set_sneaking", state=bool(enabled))
+			def set_sprinting(enabled=True): return _invoke("set_sprinting", state=bool(enabled))
+			def get_inventory_slot(slot_index): return _object(InventorySlot, _invoke("get_inventory_slot", slot=int(slot_index)))
+			def get_inventory(): return [_object(InventorySlot, slot) for slot in _invoke("get_inventory")]
+			def quick_move_slot(slot_index): return _invoke("quick_move_slot", slot=int(slot_index))
+			def drop_slot(slot_index): return _invoke("drop_slot", slot=int(slot_index))
+			def swap_slots(first_slot, second_slot): return _invoke("swap_slots", slot_a=int(first_slot), slot_b=int(second_slot))
+			def get_selected_hotbar_slot(): return _invoke("get_selected_hotbar_slot")["slot"]
+			def select_hotbar_slot(slot_index): return _invoke("select_hotbar_slot", slot=int(slot_index))["slot"]
+			def get_leaderboard():
+			    value = _invoke("get_leaderboard")
+			    value["entries"] = [LeaderboardEntry(**entry) for entry in value["entries"]]
+			    return Leaderboard(**value)
+			def click_slot(slot_index, button=0, action_type="PICKUP"): return _invoke("click_slot", slot=int(slot_index), button=int(button), action_type=action_type)
+			def get_target_block(): return _object(Block, _invoke("get_target_block"))
+			def get_target_entity(): return _entity(_invoke("get_target_entity"))
+			def get_nbt(entity):
+			    entity_id = entity.id if isinstance(entity, Entity) else int(entity)
+			    return _invoke("get_entity_nbt", entity_id=entity_id)["snbt"]
+			def get_health(): return _object(Health, _invoke("get_health"))
+			def get_hunger(): return _object(Hunger, _invoke("get_hunger"))
+			def get_armor(): return _object(Armor, _invoke("get_armor"))
+			def get_dimension(): return _invoke("get_dimension")["dimension"]
+			def get_biome(): return _invoke("get_biome")["biome"]
+			def get_nearby_entities(radius=16.0): return [_entity(entity) for entity in _invoke("get_nearby_entities", radius=float(radius))]
+			def get_nearby_players(radius=16.0): return [_object(Player, player) for player in _invoke("get_nearby_players", radius=float(radius))]
+			def log_info(message): _emit_control({"command": "log", "level": "INFO", "message": str(message)})
+			def log_error(message): _emit_control({"command": "log", "level": "ERROR", "message": str(message)})
+			def disable_chat_output(): _emit_control({"command": "set_chat_output", "enabled": False})
+			def enable_chat_output(): _emit_control({"command": "set_chat_output", "enabled": True})
+
+			def _register(event_type, handler): _EVENT_HANDLERS[event_type].append(handler); _start_events(); return handler
+			def on_chat(handler): return _register("chat", handler)
+			def on_tick(handler): return _register("tick", handler)
+			def on_join_world(handler): return _register("join_world", handler)
+			def _event_loop():
+			    while not _STOP_EVENTS.is_set():
+			        for event in _invoke("poll_events", types=list(_EVENT_HANDLERS), limit=100):
+			            for handler in list(_EVENT_HANDLERS[event["type"]]): handler(event)
+			        time.sleep(0.05)
+			def _start_events():
+			    if not getattr(_start_events, "thread", None) or not _start_events.thread.is_alive():
+			        _STOP_EVENTS.clear(); _start_events.thread = threading.Thread(target=_event_loop, daemon=True); _start_events.thread.start()
+			def stop_events(): _STOP_EVENTS.set()
+			def wait_forever(interval=0.1):
+			    while True: time.sleep(interval)
+
+			class Game:
+			    sendchat = staticmethod(send_chat)
+			    getchat = staticmethod(get_chat)
+			    getplayerposition = staticmethod(get_player_position)
+			    runjava = staticmethod(run_java)
+			    lookat = staticmethod(look_at)
+			    rightclick = staticmethod(right_click)
+			    leftclick = staticmethod(left_click)
+			    jump = staticmethod(jump)
+			    moveforward = staticmethod(move_forward)
+			    moveback = staticmethod(move_back)
+			    moveleft = staticmethod(move_left)
+			    moveright = staticmethod(move_right)
+			    stopmoving = staticmethod(stop_moving)
+			    setsneaking = staticmethod(set_sneaking)
+			    setsprinting = staticmethod(set_sprinting)
+			    getinventoryslot = staticmethod(get_inventory_slot)
+			    getinventory = staticmethod(get_inventory)
+			    quickmoveslot = staticmethod(quick_move_slot)
+			    dropslot = staticmethod(drop_slot)
+			    swapslots = staticmethod(swap_slots)
+			    getselectedhotbarslot = staticmethod(get_selected_hotbar_slot)
+			    selecthotbarslot = staticmethod(select_hotbar_slot)
+			    getleaderboard = staticmethod(get_leaderboard)
+			    clickslot = staticmethod(click_slot)
+			    gettargetblock = staticmethod(get_target_block)
+			    gettargetentity = staticmethod(get_target_entity)
+			    getnbt = staticmethod(get_nbt)
+			    gethealth = staticmethod(get_health)
+			    gethunger = staticmethod(get_hunger)
+			    getarmor = staticmethod(get_armor)
+			    getdimension = staticmethod(get_dimension)
+			    getbiome = staticmethod(get_biome)
+			    getnearbyentities = staticmethod(get_nearby_entities)
+			    getnearbyplayers = staticmethod(get_nearby_players)
+			    loginfo = staticmethod(log_info)
+			    logerror = staticmethod(log_error)
+			    disablechatoutput = staticmethod(disable_chat_output)
+			    enablechatoutput = staticmethod(enable_chat_output)
+			    onchat = staticmethod(on_chat)
+			    ontick = staticmethod(on_tick)
+			    onjoinworld = staticmethod(on_join_world)
+			    stopevents = staticmethod(stop_events)
+			    waitforever = staticmethod(wait_forever)
+
+			class Data:
+			    Position = Position
+			    Block = Block
+			    Entity = Entity
+			    Player = Player
+			    InventorySlot = InventorySlot
+			    Health = Health
+			    Hunger = Hunger
+			    Armor = Armor
+			    Leaderboard = Leaderboard
+			    LeaderboardEntry = LeaderboardEntry
+
+			game = Game()
+			data = Data()
+			atexit.register(stop_events)
+			""".replace("__MINESCRIPT_PORT__", String.valueOf(this.port));
+	}
+
 	private static String exampleScriptSource() {
 		return lines(
-			"import minescript",
+			"from minescript import game",
 			"",
-			"minescript.log(\"player position:\")",
-			"print(minescript.getplayerpos())",
+			"game.loginfo(\"player position:\")",
+			"print(game.getplayerposition())",
 			"",
-			"minescript.log(\"target block:\")",
-			"print(minescript.gettargetblock())",
+			"game.loginfo(\"target block:\")",
+			"print(game.gettargetblock())",
 			"",
-			"@minescript.on_chat",
+			"@game.onchat",
 			"def handle_chat(event):",
 			"\tif \"hello\" in event[\"message\"].lower():",
-			"\t\tminescript.sendchat(\"Hello from Minescript\")",
+			"\t\tgame.sendchat(\"Hello from Minescript\")",
 			"",
 			"# minescript.wait_forever()"
 		);
 	}
 
 	private static String testScriptSource() {
+		return lines(
+			"from minescript import game",
+			"",
+			"print(game.getplayerposition())",
+			"print(game.getinventory())",
+			"print(game.getnearbyentities())",
+			"print(game.gettargetblock())",
+			"print(game.gettargetentity())"
+		);
+	}
+
+	private static String legacyTestScriptSource() {
 		return lines(
 			"import time",
 			"",
