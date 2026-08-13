@@ -456,6 +456,8 @@ public record MinescriptConfig(
 			_CONTROL_PREFIX = os.environ.get("MINESCRIPT_CONTROL_PREFIX", "__MINESCRIPT_CONTROL__:")
 			_EVENT_HANDLERS = {"chat": [], "tick": [], "join_world": []}
 			_STOP_EVENTS = threading.Event()
+			_BRIDGE_METHODS = None
+			_BRIDGE_INFO = None
 
 			class Data:
 			    def __init__(self, **values): self.__dict__.update(values)
@@ -507,6 +509,40 @@ public record MinescriptConfig(
 			        raise RuntimeError(f"Minescript bridge is unavailable: {exc}") from exc
 			    if not payload.get("ok"): raise RuntimeError(payload.get("error", "Unknown Minescript error"))
 			    return payload.get("result")
+
+			def methods(refresh=False):
+			    global _BRIDGE_METHODS
+			    if refresh or _BRIDGE_METHODS is None: _BRIDGE_METHODS = _invoke("listmethods")
+			    return list(_BRIDGE_METHODS)
+			def bridge_info(refresh=False):
+			    global _BRIDGE_INFO
+			    if refresh or _BRIDGE_INFO is None: _BRIDGE_INFO = _invoke("bridgeinfo")
+			    return dict(_BRIDGE_INFO)
+			def _normalize_method_name(name): return "".join(character for character in str(name).lower() if character.isalnum())
+			def _resolve_method(name):
+			    normalized = _normalize_method_name(name)
+			    for method in methods():
+			        if normalized == _normalize_method_name(method["name"]) or normalized in [_normalize_method_name(alias) for alias in method.get("aliases", [])]: return method
+			    raise ValueError(f"Bridge method is not available: {name}")
+			def has_method(name):
+			    try: _resolve_method(name); return True
+			    except ValueError: return False
+			def register_function(name, bridge_method=None):
+			    function_name = str(name)
+			    method = _resolve_method(bridge_method or function_name)
+			    def registered(*args, **kwargs):
+			        parameters = method.get("params", [])
+			        if len(args) > len(parameters): raise TypeError(f"{method['name']} accepts at most {len(parameters)} positional arguments")
+			        payload = dict(kwargs)
+			        for index, value in enumerate(args):
+			            parameter_name = parameters[index]["name"]
+			            if parameter_name in payload: raise TypeError(f"Argument {parameter_name} was provided twice")
+			            payload[parameter_name] = value
+			        missing = [parameter["name"] for parameter in parameters if not parameter.get("optional", False) and parameter["name"] not in payload]
+			        if missing: raise TypeError(f"Missing required arguments: {', '.join(missing)}")
+			        return _invoke(method["name"], **payload)
+			    setattr(game, function_name, registered)
+			    return registered
 
 			def _object(type_, value): return None if value is None else type_(**value)
 			def _entity(value): return _object(Player if value and value.get("entity_type") == "minecraft:player" else Entity, value)
@@ -584,6 +620,10 @@ public record MinescriptConfig(
 			    while True: time.sleep(interval)
 
 			class Game:
+			    methods = staticmethod(methods)
+			    bridgeinfo = staticmethod(bridge_info)
+			    hasmethod = staticmethod(has_method)
+			    registerfunction = staticmethod(register_function)
 			    sendchat = staticmethod(send_chat)
 			    getchat = staticmethod(get_chat)
 			    getplayerposition = staticmethod(get_player_position)

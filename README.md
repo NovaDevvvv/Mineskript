@@ -411,3 +411,27 @@ game.showinventory(inventory)
 ```
 {"shown": true, "rows": 3, "size": 27}
 ```
+
+<hr>
+
+24) `game.methods()` / `game.bridgeinfo()` / `game.hasmethod(name)` / `game.registerfunction(name, bridge_method = None)`
+
+Discovers the functions advertised by the running bridge. Use this when a script supports optional features across different Minescript releases. `game.registerfunction()` creates a function on `game` that calls a supported bridge method.
+
+> Input
+```py
+print(game.bridgeinfo())
+
+if game.hasmethod("showtoast"):
+    game.showtoast("Ready", icon="minecraft:emerald")
+
+game.registerfunction("playerposition", "getplayerpos")
+print(game.playerposition())
+```
+
+> Output
+```
+{"protocol_version": 1, "method_count": 39}
+```
+
+The bridge accepts canonical names and advertised aliases, such as `get_player_position` and `getplayerpos`. This keeps protocol-aware Python scripts compatible across API releases; each Minecraft version still needs a matching compiled Fabric mod build.

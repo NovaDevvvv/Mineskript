@@ -21,6 +21,49 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 public final class PythonBridgeServer {
+	private static final int PROTOCOL_VERSION = 1;
+	private static final List<BridgeMethod> BRIDGE_METHODS = List.of(
+		method("send_chat", List.of("sendchat"), parameter("message")),
+		method("get_chat", List.of("getchat"), optionalParameter("limit")),
+		method("get_player_position", List.of("getplayerpos", "getplayerposition")),
+		method("look_at", List.of("lookat"), parameter("x"), parameter("y"), parameter("z")),
+		method("right_click", List.of("rightclick")),
+		method("left_click", List.of("leftclick")),
+		method("jump", List.of()),
+		method("show_action_bar", List.of("showactionbar"), parameter("message")),
+		method("show_title", List.of("showtitle"), parameter("title"), optionalParameter("subtitle"), optionalParameter("fade_in"), optionalParameter("stay"), optionalParameter("fade_out")),
+		method("show_toast", List.of("showtoast"), parameter("title"), optionalParameter("description"), optionalParameter("icon")),
+		method("show_inventory", List.of("showinventory"), parameter("title"), optionalParameter("rows"), optionalParameter("items")),
+		method("move_forward", List.of("moveforward"), optionalParameter("state")),
+		method("move_back", List.of("moveback"), optionalParameter("state")),
+		method("move_left", List.of("moveleft"), optionalParameter("state")),
+		method("move_right", List.of("moveright"), optionalParameter("state")),
+		method("stop_moving", List.of("stopmoving")),
+		method("set_sneaking", List.of("setsneaking"), optionalParameter("state")),
+		method("set_sprinting", List.of("setsprinting"), optionalParameter("state")),
+		method("run_java", List.of("runjava"), parameter("source")),
+		method("get_inventory_slot", List.of("getinventoryslot"), parameter("slot")),
+		method("get_inventory", List.of("getinventory")),
+		method("quick_move_slot", List.of("quickmoveslot"), parameter("slot")),
+		method("drop_slot", List.of("dropslot"), parameter("slot")),
+		method("swap_slots", List.of("swapslots"), parameter("slot_a"), parameter("slot_b")),
+		method("get_selected_hotbar_slot", List.of("getselectedhotbarslot")),
+		method("select_hotbar_slot", List.of("selecthotbarslot"), parameter("slot")),
+		method("get_leaderboard", List.of("getleaderboard")),
+		method("click_slot", List.of("clickslot"), parameter("slot"), optionalParameter("button"), optionalParameter("action_type")),
+		method("get_target_block", List.of("gettargetblock")),
+		method("get_target_entity", List.of("gettargetentity")),
+		method("get_entity_nbt", List.of("getnbt"), parameter("entity_id")),
+		method("get_health", List.of("gethealth")),
+		method("get_hunger", List.of("gethunger")),
+		method("get_armor", List.of("getarmor")),
+		method("get_dimension", List.of("getdimension")),
+		method("get_biome", List.of("getbiome")),
+		method("get_nearby_entities", List.of("getnearbyentities"), optionalParameter("radius")),
+		method("get_nearby_players", List.of("getnearbyplayers"), optionalParameter("radius")),
+		method("poll_events", List.of("pollevents"), optionalParameter("types"), optionalParameter("limit"))
+	);
+
 	public interface Api {
 		JsonElement sendChat(String message);
 
@@ -166,8 +209,10 @@ public final class PythonBridgeServer {
 		}
 
 		private JsonElement dispatch(String methodName, JsonObject args) {
-			String normalized = methodName.toLowerCase(Locale.ROOT);
+			String normalized = canonicalMethodName(methodName);
 			return switch (normalized) {
+				case "listmethods" -> listMethods();
+				case "bridgeinfo" -> bridgeInfo();
 				case "send_chat" -> api.sendChat(getString(args, "message", ""));
 				case "get_chat" -> api.getChat(getInt(args, "limit", 20));
 				case "get_player_position" -> api.getPlayerPos();
@@ -276,5 +321,67 @@ public final class PythonBridgeServer {
 				outputStream.write(body);
 			}
 		}
+
+		private String canonicalMethodName(String methodName) {
+			String normalized = normalizeMethodName(methodName);
+			for (BridgeMethod method : BRIDGE_METHODS) {
+				if (normalizeMethodName(method.name()).equals(normalized)
+					|| method.aliases().stream().map(PythonBridgeServer::normalizeMethodName).anyMatch(normalized::equals)) {
+					return method.name();
+				}
+			}
+
+			return normalized;
+		}
+
+		private JsonArray listMethods() {
+			JsonArray methods = new JsonArray();
+			for (BridgeMethod method : BRIDGE_METHODS) {
+				JsonObject json = new JsonObject();
+				json.addProperty("name", method.name());
+				JsonArray aliases = new JsonArray();
+				method.aliases().forEach(aliases::add);
+				json.add("aliases", aliases);
+				JsonArray parameters = new JsonArray();
+				for (BridgeParameter parameter : method.parameters()) {
+					JsonObject parameterJson = new JsonObject();
+					parameterJson.addProperty("name", parameter.name());
+					parameterJson.addProperty("optional", parameter.optional());
+					parameters.add(parameterJson);
+				}
+				json.add("params", parameters);
+				methods.add(json);
+			}
+			return methods;
+		}
+
+		private JsonObject bridgeInfo() {
+			JsonObject info = new JsonObject();
+			info.addProperty("protocol_version", PROTOCOL_VERSION);
+			info.addProperty("method_count", BRIDGE_METHODS.size());
+			return info;
+		}
+	}
+
+	private static BridgeMethod method(String name, List<String> aliases, BridgeParameter... parameters) {
+		return new BridgeMethod(name, aliases, List.of(parameters));
+	}
+
+	private static BridgeParameter parameter(String name) {
+		return new BridgeParameter(name, false);
+	}
+
+	private static BridgeParameter optionalParameter(String name) {
+		return new BridgeParameter(name, true);
+	}
+
+	private static String normalizeMethodName(String value) {
+		return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+	}
+
+	private record BridgeMethod(String name, List<String> aliases, List<BridgeParameter> parameters) {
+	}
+
+	private record BridgeParameter(String name, boolean optional) {
 	}
 }
