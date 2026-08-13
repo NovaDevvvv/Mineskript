@@ -36,6 +36,14 @@ public final class PythonBridgeServer {
 
 		JsonElement jump();
 
+		JsonElement showActionBar(String message);
+
+		JsonElement showTitle(String title, String subtitle, int fadeIn, int stay, int fadeOut);
+
+		JsonElement showToast(String title, String description, String iconId);
+
+		JsonElement showInventory(String title, int rows, JsonArray items);
+
 		JsonElement setForwardPressed(boolean pressed);
 
 		JsonElement setBackPressed(boolean pressed);
@@ -171,6 +179,24 @@ public final class PythonBridgeServer {
 				case "right_click" -> api.rightClick();
 				case "left_click" -> api.leftClick();
 				case "jump" -> api.jump();
+				case "show_action_bar" -> api.showActionBar(getString(args, "message", ""));
+				case "show_title" -> api.showTitle(
+					getString(args, "title", ""),
+					getString(args, "subtitle", ""),
+					getInt(args, "fade_in", 10),
+					getInt(args, "stay", 70),
+					getInt(args, "fade_out", 20)
+				);
+				case "show_toast" -> api.showToast(
+					getString(args, "title", ""),
+					getString(args, "description", ""),
+					getString(args, "icon", "minecraft:paper")
+				);
+				case "show_inventory" -> api.showInventory(
+					getString(args, "title", "Inventory"),
+					getInt(args, "rows", 3),
+					getJsonArray(args, "items")
+				);
 				case "move_forward" -> api.setForwardPressed(getBoolean(args, "state", true));
 				case "move_back" -> api.setBackPressed(getBoolean(args, "state", true));
 				case "move_left" -> api.setLeftPressed(getBoolean(args, "state", true));
@@ -221,6 +247,10 @@ public final class PythonBridgeServer {
 
 		private String getString(JsonObject json, String key, String defaultValue) {
 			return json.has(key) ? json.get(key).getAsString() : defaultValue;
+		}
+
+		private JsonArray getJsonArray(JsonObject json, String key) {
+			return json.has(key) && json.get(key).isJsonArray() ? json.getAsJsonArray(key) : new JsonArray();
 		}
 
 		private List<String> getStringList(JsonObject json, String key) {

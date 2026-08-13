@@ -471,6 +471,33 @@ public record MinescriptConfig(
 			class Armor(Data): pass
 			class LeaderboardEntry(Data): pass
 			class Leaderboard(Data): pass
+			class Toast(Data):
+			    def __init__(self, title, description=None, icon="minecraft:paper"):
+			        super().__init__(title=str(title), description=None if description is None else str(description), icon=str(icon))
+
+			class InventoryType:
+			    CHEST_1 = 1
+			    CHEST_2 = 2
+			    CHEST_3 = 3
+			    CHEST_4 = 4
+			    CHEST_5 = 5
+			    CHEST_6 = 6
+
+			class Inventory:
+			    def __init__(self, title="Inventory", inventory_type=InventoryType.CHEST_3):
+			        self.title = str(title)
+			        self.rows = max(1, min(6, int(inventory_type)))
+			        self.items = {}
+			    def set_item(self, slot, item_id, count=1):
+			        slot = int(slot)
+			        if slot < 0 or slot >= self.rows * 9: raise ValueError(f"Slot must be between 0 and {self.rows * 9 - 1}")
+			        self.items[slot] = {"slot": slot, "item_id": str(item_id), "count": int(count)}
+			        return self
+			    def clear(self, slot=None):
+			        if slot is None: self.items.clear()
+			        else: self.items.pop(int(slot), None)
+			        return self
+			    def show(self): return show_inventory(self)
 
 			def _invoke(method, **args):
 			    request = urllib.request.Request(_BASE_URL, data=json.dumps({"method": method, "args": args}).encode(), headers={"Content-Type": "application/json"}, method="POST")
@@ -493,6 +520,17 @@ public record MinescriptConfig(
 			def right_click(): return _invoke("right_click")
 			def left_click(): return _invoke("left_click")
 			def jump(): return _invoke("jump")
+			def show_action_bar(message): return _invoke("show_action_bar", message=str(message))
+			def show_title(title, subtitle=None, fade_in=10, stay=70, fade_out=20):
+			    return _invoke("show_title", title=str(title), subtitle="" if subtitle is None else str(subtitle), fade_in=int(fade_in), stay=int(stay), fade_out=int(fade_out))
+			def create_toast(title, description=None, icon="minecraft:paper"): return Toast(title, description, icon)
+			def show_toast(toast, description=None, icon="minecraft:paper"):
+			    toast = toast if isinstance(toast, Toast) else Toast(toast, description, icon)
+			    return _invoke("show_toast", title=toast.title, description=toast.description or "", icon=toast.icon)
+			def create_inventory(title="Inventory", inventory_type=InventoryType.CHEST_3): return Inventory(title, inventory_type)
+			def show_inventory(inventory):
+			    if not isinstance(inventory, Inventory): raise TypeError("inventory must be an Inventory")
+			    return _invoke("show_inventory", title=inventory.title, rows=inventory.rows, items=list(inventory.items.values()))
 			def move_forward(pressed=True): return _invoke("move_forward", state=bool(pressed))
 			def move_back(pressed=True): return _invoke("move_back", state=bool(pressed))
 			def move_left(pressed=True): return _invoke("move_left", state=bool(pressed))
@@ -554,6 +592,12 @@ public record MinescriptConfig(
 			    rightclick = staticmethod(right_click)
 			    leftclick = staticmethod(left_click)
 			    jump = staticmethod(jump)
+			    showactionbar = staticmethod(show_action_bar)
+			    showtitle = staticmethod(show_title)
+			    createtoast = staticmethod(create_toast)
+			    showtoast = staticmethod(show_toast)
+			    createinventory = staticmethod(create_inventory)
+			    showinventory = staticmethod(show_inventory)
 			    moveforward = staticmethod(move_forward)
 			    moveback = staticmethod(move_back)
 			    moveleft = staticmethod(move_left)
@@ -601,6 +645,9 @@ public record MinescriptConfig(
 			    Armor = Armor
 			    Leaderboard = Leaderboard
 			    LeaderboardEntry = LeaderboardEntry
+			    Toast = Toast
+			    InventoryType = InventoryType
+			    Inventory = Inventory
 
 			game = Game()
 			data = Data()

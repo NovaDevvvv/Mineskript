@@ -30,6 +30,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.toast.SystemToast;
@@ -37,6 +38,8 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.HungerManager;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.Registries;
@@ -49,11 +52,15 @@ import net.minecraft.scoreboard.ScoreboardDisplaySlot;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -415,6 +422,85 @@ public final class MinescriptClient implements ClientModInitializer {
 				player.jump();
 				JsonObject result = new JsonObject();
 				result.addProperty("jumped", true);
+				return result;
+			});
+		}
+
+		@Override
+		public JsonElement showActionBar(String message) {
+			return runOnClientThread(() -> {
+				ClientPlayerEntity player = requirePlayer(MinecraftClient.getInstance());
+				player.sendMessage(Text.literal(message), true);
+				return displayResult("action_bar");
+			});
+		}
+
+		@Override
+		public JsonElement showTitle(String title, String subtitle, int fadeIn, int stay, int fadeOut) {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				requirePlayer(client);
+				client.inGameHud.setTitleTicks(Math.max(0, fadeIn), Math.max(0, stay), Math.max(0, fadeOut));
+				client.inGameHud.setTitle(Text.literal(title));
+				if (!subtitle.isBlank()) {
+					client.inGameHud.setSubtitle(Text.literal(subtitle));
+				}
+				return displayResult("title");
+			});
+		}
+
+		@Override
+		public JsonElement showToast(String title, String description, String iconId) {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				requirePlayer(client);
+				client.getToastManager().add(new ScriptToast(
+					Text.literal(title),
+					description.isBlank() ? null : Text.literal(description),
+					createItemStack(iconId, 1)
+				));
+				return displayResult("toast");
+			});
+		}
+
+		@Override
+		public JsonElement showInventory(String title, int rows, JsonArray items) {
+			return runOnClientThread(() -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				ClientPlayerEntity player = requirePlayer(client);
+				int validatedRows = Math.clamp(rows, 1, 6);
+				SimpleInventory inventory = new SimpleInventory(validatedRows * 9);
+				for (JsonElement itemElement : items) {
+					if (!itemElement.isJsonObject()) {
+						continue;
+					}
+
+					JsonObject item = itemElement.getAsJsonObject();
+					int slot = item.has("slot") ? item.get("slot").getAsInt() : -1;
+					if (slot < 0 || slot >= inventory.size()) {
+						continue;
+					}
+
+					String itemId = item.has("item_id") ? item.get("item_id").getAsString() : "minecraft:air";
+					int count = item.has("count") ? item.get("count").getAsInt() : 1;
+					inventory.setStack(slot, createItemStack(itemId, count));
+				}
+
+				ScreenHandlerType<?> handlerType = switch (validatedRows) {
+					case 1 -> ScreenHandlerType.GENERIC_9X1;
+					case 2 -> ScreenHandlerType.GENERIC_9X2;
+					case 3 -> ScreenHandlerType.GENERIC_9X3;
+					case 4 -> ScreenHandlerType.GENERIC_9X4;
+					case 5 -> ScreenHandlerType.GENERIC_9X5;
+					case 6 -> ScreenHandlerType.GENERIC_9X6;
+					default -> throw new IllegalStateException("Unexpected inventory row count");
+				};
+				GenericContainerScreenHandler handler = new GenericContainerScreenHandler(handlerType, 0, player.getInventory(), inventory, validatedRows);
+				client.setScreen(new GenericContainerScreen(handler, player.getInventory(), Text.literal(title)));
+				JsonObject result = new JsonObject();
+				result.addProperty("shown", true);
+				result.addProperty("rows", validatedRows);
+				result.addProperty("size", inventory.size());
 				return result;
 			});
 		}
@@ -861,6 +947,27 @@ public final class MinescriptClient implements ClientModInitializer {
 		}
 	}
 
+	private static JsonObject displayResult(String displayType) {
+		JsonObject result = new JsonObject();
+		result.addProperty("shown", true);
+		result.addProperty("type", displayType);
+		return result;
+	}
+
+	private static ItemStack createItemStack(String itemId, int count) {
+		try {
+			ItemStack stack = new ItemStack(Registries.ITEM.get(Identifier.of(itemId)));
+			if (!stack.isEmpty()) {
+				stack.setCount(Math.clamp(count, 1, stack.getMaxCount()));
+				return stack;
+			}
+		} catch (IllegalArgumentException exception) {
+			LOGGER.warn("Invalid item id for Minescript UI: {}", itemId);
+		}
+
+		return new ItemStack(Items.PAPER);
+	}
+
 	private JsonObject serializeSlot(ScreenHandler screenHandler, int slotIndex) {
 		Slot slot = screenHandler.slots.get(slotIndex);
 		ItemStack stack = slot.getStack();
@@ -962,17 +1069,30 @@ public final class MinescriptClient implements ClientModInitializer {
 
 	private static void applySyntheticInputState(MinecraftClient client) {
 		boolean canApplyInput = client.currentScreen == null;
-		client.options.forwardKey.setPressed(canApplyInput && syntheticForwardPressed);
-		client.options.backKey.setPressed(canApplyInput && syntheticBackPressed);
-		client.options.leftKey.setPressed(canApplyInput && syntheticLeftPressed);
-		client.options.rightKey.setPressed(canApplyInput && syntheticRightPressed);
-		client.options.sneakKey.setPressed(canApplyInput && syntheticSneakPressed);
-		client.options.sprintKey.setPressed(canApplyInput && syntheticSprintPressed);
+		boolean forwardPressed = canApplyInput && (syntheticForwardPressed || isPhysicalKeyPressed(client, client.options.forwardKey));
+		boolean backPressed = canApplyInput && (syntheticBackPressed || isPhysicalKeyPressed(client, client.options.backKey));
+		boolean leftPressed = canApplyInput && (syntheticLeftPressed || isPhysicalKeyPressed(client, client.options.leftKey));
+		boolean rightPressed = canApplyInput && (syntheticRightPressed || isPhysicalKeyPressed(client, client.options.rightKey));
+		boolean sneakPressed = canApplyInput && (syntheticSneakPressed || isPhysicalKeyPressed(client, client.options.sneakKey));
+		boolean sprintPressed = canApplyInput && (syntheticSprintPressed || isPhysicalKeyPressed(client, client.options.sprintKey));
+
+		client.options.forwardKey.setPressed(forwardPressed);
+		client.options.backKey.setPressed(backPressed);
+		client.options.leftKey.setPressed(leftPressed);
+		client.options.rightKey.setPressed(rightPressed);
+		client.options.sneakKey.setPressed(sneakPressed);
+		client.options.sprintKey.setPressed(sprintPressed);
 
 		if (client.player != null) {
-			client.player.setSneaking(canApplyInput && syntheticSneakPressed);
-			client.player.setSprinting(canApplyInput && syntheticSprintPressed);
+			client.player.setSneaking(sneakPressed);
+			client.player.setSprinting(sprintPressed);
 		}
+	}
+
+	private static boolean isPhysicalKeyPressed(MinecraftClient client, net.minecraft.client.option.KeyBinding keyBinding) {
+		InputUtil.Key key = keyBinding.getDefaultKey();
+		return key.getCategory() == InputUtil.Type.KEYSYM
+			&& InputUtil.isKeyPressed(client.getWindow().getHandle(), key.getCode());
 	}
 
 	private record ScoreEntry(String name, int score) {

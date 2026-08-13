@@ -1,11 +1,12 @@
 {
 	"schemaVersion": 1,
-	"id": "minescript",
+	"id": "minepyscript",
 	"version": "${version}",
-	"name": "Minescript",
+	"name": "minepyscript",
 	"description": "Client-side Python bridge for scripted Minecraft actions.",
+	"icon": "assets/minescript/icon.png",
 	"authors": [
-		"GitHub Copilot"
+		"Github: NovaDevvvv"
 	],
 	"environment": "client",
 	"entrypoints": {
